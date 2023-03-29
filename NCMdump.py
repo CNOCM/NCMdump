@@ -1,4 +1,4 @@
-# NCMdumper
+# NCMdump
 # 解密ncm文件
 import binascii
 import struct
@@ -7,6 +7,10 @@ import json
 import os
 import requests
 from Crypto.Cipher import AES
+# from mutagen.id3 import ID3
+# from mutagen.id3._frames import COMM, TXXX, APIC, TALB, TIT2, TPE1
+# from mutagen.id3._specs import Encoding
+# from mutagen.flac import FLAC
 
 
 def dump(file_path):
@@ -22,7 +26,7 @@ def dump(file_path):
         key_length = struct.unpack('<I', bytes(key_length))[0]
         key_data = f.read(key_length)
         key_data_array = bytearray(key_data)
-        for i in range(0, len(key_data_array)):
+        for i in range(len(key_data_array)):
             key_data_array[i] ^= 0x64
         key_data = bytes(key_data_array)
         cryptor = AES.new(core_key, AES.MODE_ECB)
@@ -48,9 +52,10 @@ def dump(file_path):
         meta_length = struct.unpack('<I', bytes(meta_length))[0]
         meta_data = f.read(meta_length)
         meta_data_array = bytearray(meta_data)
-        for i in range(0, len(meta_data_array)):
+        for i in range(len(meta_data_array)):
             meta_data_array[i] ^= 0x63
         meta_data = bytes(meta_data_array)
+        key163 = (meta_data).decode('utf-8')
         meta_data = base64.b64decode(meta_data[22:])
         cryptor = AES.new(meta_key, AES.MODE_ECB)
         meta_data = unpad(cryptor.decrypt(meta_data)).decode('utf-8')[6:]
@@ -65,9 +70,8 @@ def dump(file_path):
         cover_url = meta_data['albumPic']
         artists = ' '.join([artist[0] for artist in artist_list])
         file_name = f"{meta_data['musicName']} - {artists}.{meta_data['format']}"
-        file_dir = file_path.rsplit('\\', 1)[0]
-        with open(f"{file_dir}\\{file_name}", 'wb') as m:
-            chunk = bytearray()
+        file_path = os.path.join(os.path.split(file_path)[0], file_name)
+        with open(file_path, 'wb') as m:
             while True:
                 chunk = bytearray(f.read(0x8000))
                 chunk_length = len(chunk)
@@ -77,13 +81,13 @@ def dump(file_path):
                     j = i & 0xff
                     chunk[i - 1] ^= key_box[(key_box[j] +
                                              key_box[(key_box[j] + j) & 0xff]) & 0xff]
-            m.write(chunk)
-        # 如果封面链接存在，则下载并保存封面图片
-        if cover_url:
-            response = requests.get(cover_url)
-            file_dir = file_path.rsplit('\\', 1)[0]
-            with open(f"{file_dir}\\{meta_data['musicName']} - {artists}.jpg", 'wb') as c:
-                c.write(response.content)
+                m.write(chunk)
+    # 下载歌曲封面
+    if cover_url:
+        response = requests.get(cover_url)
+        file_dir = file_path.rsplit('\\', 1)[0]
+        with open(f"{file_dir}\\{meta_data['musicName']} - {artists}.jpg", 'wb') as c:
+            c.write(response.content)
 
 
 def file_extension(path):
@@ -92,14 +96,15 @@ def file_extension(path):
 
 if __name__ == '__main__':
     file_path = input("请输入文件所在路径(例如：E:\\ncm_music)\n")
-    files = [f for f in os.listdir(file_path) if f.endswith('.ncm')]
-    total_files = len(files)
-    processed_files = 0
-    for filename in files:
+    ncm_files = [os.path.join(file_path, f) for f in os.listdir(
+        file_path) if file_extension(f) == ".ncm"]
+    total_files = len(ncm_files)
+    processd_files = 0
+    for path in ncm_files:
         try:
-            dump(os.path.join(file_path, filename))
-            processed_files += 1
-            print(f"Processed {processed_files}/{total_files}: {filename}")
+            dump(path)
+            processd_files += 1
+            print(f"Processed {processd_files}/{total_files}：{path}")
         except Exception as e:
-            print(f"Error processing {filename}: {e}")
-    print("Decryption completed.")
+            print(f"Error processing {path}: {e}")
+        print("Decryption completed.")
